@@ -1,112 +1,329 @@
+"use client";
+import { useState, useRef, useEffect } from "react";
 import Image from "next/image";
-import { Geist, Geist_Mono } from "next/font/google";
+import {
+  FaCamera,
+  FaBorderAll,
+  FaDownload,
+  FaTimes,
+  FaRegImage,
+  FaTint,
+  FaAdjust,
+  FaEraser,
+} from "react-icons/fa";
+import { MdBlurOn } from "react-icons/md";
+import { SelfieSegmentation } from "@mediapipe/selfie_segmentation";
+import Head from "next/head";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
+export default function Photobooth() {
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const finalCanvasRef = useRef(null);
+  const [photos, setPhotos] = useState([]);
+  const [countdown, setCountdown] = useState(null);
+  const [isCapturing, setIsCapturing] = useState(false);
+  const [finalPhoto, setFinalPhoto] = useState(null);
+  const [selectedFrame, setSelectedFrame] = useState(null);
+  const [filter, setFilter] = useState("none");
+  const [backgroundBlur, setBackgroundBlur] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+  useEffect(() => {
+    const startCamera = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+        });
+        if (videoRef.current) videoRef.current.srcObject = stream;
+      } catch (error) {
+        console.error("Error accessing webcam:", error);
+      }
+    };
+    startCamera();
+  }, []);
 
-export default function Home() {
+  const captureSequence = async () => {
+    if (isCapturing || photos.length >= 3) return;
+
+    setIsCapturing(true);
+    let newPhotos = [...photos];
+
+    for (let i = photos.length; i < 3; i++) {
+      for (let j = 3; j > 0; j--) {
+        setCountdown(j);
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+      setCountdown(null);
+      const photo = capturePhoto();
+      newPhotos.push(photo);
+      setPhotos([...newPhotos]);
+    }
+
+    setIsCapturing(false);
+  };
+
+  const capturePhoto = () => {
+    const canvas = canvasRef.current;
+    const video = videoRef.current;
+    if (!canvas || !video) return null;
+
+    const ctx = canvas.getContext("2d");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    // Terapkan filter sebelum menggambar gambar
+    if (backgroundBlur) {
+      ctx.filter = "blur(10px)";
+    } else {
+      ctx.filter = filter;
+    }
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    return canvas.toDataURL("image/png");
+  };
+
+  const generateFinalPhoto = (photoList, frameType = null) => {
+    if (!photoList || photoList.length === 0) return;
+
+    setSelectedFrame(frameType);
+
+    if (!frameType) {
+      setFinalPhoto(null);
+      return;
+    }
+
+    const finalCanvas = finalCanvasRef.current;
+    if (!finalCanvas) return;
+
+    const ctx = finalCanvas.getContext("2d");
+    const imgParts = [];
+    let loadedCount = 0;
+
+    photoList.forEach((src, index) => {
+      if (!src) return;
+      const img = new window.Image();
+      img.crossOrigin = "Photobooth";
+      img.src = src;
+
+      img.onload = () => {
+        imgParts[index] = img;
+        loadedCount++;
+
+        if (loadedCount === photoList.length) {
+          const width = imgParts[0].width;
+          const height = imgParts[0].height;
+          const gapSize = 10; // Jarak antar foto
+          const framePadding = 20; // Padding untuk bingkai penuh
+          const borderRadius = 30; // Radius sudut foto
+
+          finalCanvas.width = width + framePadding * 2;
+          finalCanvas.height =
+            height * photoList.length +
+            gapSize * (photoList.length - 1) +
+            framePadding * 2;
+
+          // Background frame
+          ctx.fillStyle = frameType === "frame1" ? "blue" : "pink";
+          ctx.fillRect(0, 0, finalCanvas.width, finalCanvas.height);
+
+          // Menampilkan foto dengan efek rounded dan gap
+          imgParts.forEach((img, i) => {
+            const x = framePadding;
+            const y = framePadding + i * (height + gapSize);
+
+            // Buat mask rounded
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(x + borderRadius, y);
+            ctx.arcTo(x + width, y, x + width, y + height, borderRadius);
+            ctx.arcTo(x + width, y + height, x, y + height, borderRadius);
+            ctx.arcTo(x, y + height, x, y, borderRadius);
+            ctx.arcTo(x, y, x + width, y, borderRadius);
+            ctx.closePath();
+            ctx.clip();
+
+            // Gambar foto di dalam mask
+            ctx.drawImage(img, x, y, width, height);
+
+            // Kembalikan ke kondisi awal sebelum loop berikutnya
+            ctx.restore();
+          });
+
+          setFinalPhoto(finalCanvas.toDataURL("image/png"));
+        }
+      };
+    });
+  };
+
+  const downloadFinalPhoto = () => {
+    if (!finalPhoto) return;
+    const link = document.createElement("a");
+    link.href = finalPhoto;
+    link.download = "photobooth_with_frame.png";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const resetCamera = () => {
+    setPhotos([]);
+    setFinalPhoto(null);
+    setSelectedFrame(null);
+    setCountdown(null);
+    setIsCapturing(false);
+  };
+
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
+    <div className="bg-pink-300 min-h-screen">
+      <Head>
+        <title>Photobooth</title>
+        <meta
+          name="description"
+          content="Abadikan momen spesial dengan photobooth kami! Nikmati pengalaman foto seru dengan berbagai tema, properti unik, dan hasil cetak berkualitas tinggi. Cocok untuk pesta, pernikahan, ulang tahun, dan acara spesial lainnya!"
         />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              src/pages/index.js
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=default-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=default-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+      </Head>
+      <div className="max-w-screen-xl mx-auto p-4 space-y-3">
+        <div className="bg-white p-4 shadow-lg rounded-lg text-pink-500">
+          <p className="text-4xl text-center font-bold">Photobooth</p>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=default-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=default-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=default-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
+        <div className="flex md:flex-row flex-col  gap-3 item-center">
+          <div>
+            <div className="bg-white p-4 shadow-lg rounded-lg w-full">
+              <div className="relative">
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  className="w-full h-auto rounded-md"
+                  style={{ filter: backgroundBlur ? "blur(10px)" : filter }}
+                />
+                <canvas ref={canvasRef} className="hidden" />
+                {countdown !== null && (
+                  <div className="absolute top-2 left-1/2 transform -translate-x-1/2 text-pink-500 text-3xl font-bold">
+                    {countdown}
+                  </div>
+                )}
+              </div>
+              <div className="flex justify-center gap-2 items-center">
+                <div>
+                  <button
+                    onClick={() => setFilter("none")}
+                    className="w-full mt-3 p-2 bg-gray-500 text-white rounded-full text-center"
+                  >
+                    <FaRegImage />
+                  </button>
+                </div>
+                {/* <div>
+                  <button
+                    onClick={() => setBackgroundBlur(!backgroundBlur)}
+                    className={`w-full mt-3 p-2 rounded-full text-white transition-colors duration-300 ${
+                      backgroundBlur ? "bg-green-500" : "bg-gray-600"
+                    }`}
+                  >
+                    <MdBlurOn />
+                  </button>
+                </div> */}
+                <div>
+                  <button
+                    onClick={() => setFilter("grayscale(100%)")}
+                    className="w-full mt-3 p-2 bg-black text-white rounded-full text-center"
+                  >
+                    <FaAdjust />
+                  </button>
+                </div>
+                <div>
+                  <button
+                    onClick={() => setFilter("sepia(100%)")}
+                    className="w-full mt-3 p-2 bg-yellow-500 text-white rounded-full text-center "
+                  >
+                    <FaTint />
+                  </button>
+                </div>
+                <div>
+                  <button
+                    onClick={captureSequence}
+                    className="w-full mt-3 p-2 bg-pink-500 text-white rounded-full text-center"
+                    disabled={isCapturing || photos.length >= 3}
+                  >
+                    <FaCamera />
+                  </button>
+                </div>
+                <div>
+                  <button
+                    onClick={resetCamera}
+                    className="w-full mt-3 p-2 bg-red-500 text-white rounded-full text-center"
+                  >
+                    <FaEraser />
+                  </button>
+                </div>
+                <div>
+                  {photos.length === 3 && (
+                    <div className="flex justify-center gap-2">
+                      <button
+                        onClick={() => generateFinalPhoto(photos, "frame1")}
+                        className="w-full mt-3 p-2 bg-blue-500 text-white rounded-full"
+                      >
+                        <FaBorderAll />
+                      </button>
+                      <button
+                        onClick={() => generateFinalPhoto(photos, "frame2")}
+                        className="w-full mt-3 p-2 bg-pink-500 text-white rounded-full"
+                      >
+                        <FaBorderAll />
+                      </button>
+                      <button
+                        onClick={() => generateFinalPhoto(photos, null)}
+                        className="w-full mt-3 p-2 bg-gray-500 text-white rounded-full"
+                      >
+                        <FaTimes />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div>
+            <div className="bg-white p-4 shadow-lg rounded-lg w-full">
+              <div className="flex flex-col gap-2 items-center">
+                {selectedFrame
+                  ? finalPhoto && (
+                      <Image
+                        src={finalPhoto}
+                        alt="Final Photobooth Strip"
+                        width={300}
+                        height={600}
+                        className="rounded-lg w-full"
+                      />
+                    )
+                  : photos.map((photo, index) => (
+                      <Image
+                        key={index}
+                        src={photo}
+                        alt={`Captured ${index + 1}`}
+                        width={100}
+                        height={80}
+                        className="rounded-lg w-full"
+                      />
+                    ))}
+                {finalPhoto && selectedFrame && (
+                  <button
+                    onClick={downloadFinalPhoto}
+                    className="w-full mt-2 px-3 py-2 text-sm bg-blue-500 text-white rounded-lg text-center flex items-center justify-center gap-2"
+                  >
+                    <FaDownload /> Download
+                  </button>
+                )}
+
+                <canvas ref={finalCanvasRef} className="hidden" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <br />
+      <br />
+      <br />
+      <footer class="bg-pink-500 fixed bottom-0 left-0 right-0 text-white text-center py-4 mt-14">
+        <p>&copy; 2024 Photobooth by @bima_ryan23 😎</p>
       </footer>
     </div>
   );
