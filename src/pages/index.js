@@ -40,6 +40,12 @@ export default function Photobooth() {
       }
     };
     startCamera();
+
+    return () => {
+      if (videoRef.current?.srcObject) {
+        videoRef.current.srcObject.getTracks().forEach((track) => track.stop());
+      }
+    };
   }, []);
 
   const captureSequence = async () => {
@@ -68,15 +74,48 @@ export default function Photobooth() {
     if (!canvas || !video) return null;
 
     const ctx = canvas.getContext("2d");
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+
+    // Tentukan ukuran yang sesuai untuk 16:9
+    const videoWidth = video.videoWidth;
+    const videoHeight = video.videoHeight;
+    const aspectRatio = 16 / 9;
+
+    let newWidth = videoWidth;
+    let newHeight = videoWidth / aspectRatio;
+
+    if (newHeight > videoHeight) {
+      newHeight = videoHeight;
+      newWidth = videoHeight * aspectRatio;
+    }
+
+    const offsetX = (videoWidth - newWidth) / 2;
+    const offsetY = (videoHeight - newHeight) / 2;
+
+    canvas.width = newWidth;
+    canvas.height = newHeight;
+
     // Terapkan filter sebelum menggambar gambar
     if (backgroundBlur) {
       ctx.filter = "blur(10px)";
     } else {
       ctx.filter = filter;
     }
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    ctx.translate(canvas.width, 0);
+    ctx.scale(-1, 1);
+
+    // Ambil area tengah dari video dengan rasio 16:9
+    ctx.drawImage(
+      video,
+      offsetX,
+      offsetY,
+      newWidth,
+      newHeight, // Area dari video yang diambil
+      0,
+      0,
+      newWidth,
+      newHeight // Area canvas yang digunakan
+    );
 
     return canvas.toDataURL("image/png");
   };
@@ -101,7 +140,7 @@ export default function Photobooth() {
     photoList.forEach((src, index) => {
       if (!src) return;
       const img = new window.Image();
-      img.crossOrigin = "Photobooth";
+      img.crossOrigin = "anonymous";
       img.src = src;
 
       img.onload = () => {
@@ -193,7 +232,10 @@ export default function Photobooth() {
                   ref={videoRef}
                   autoPlay
                   className="w-full h-auto rounded-md"
-                  style={{ filter: backgroundBlur ? "blur(10px)" : filter }}
+                  style={{
+                    filter: backgroundBlur ? "blur(10px)" : filter,
+                    transform: "scaleX(-1)", // Menghilangkan efek mirror
+                  }}
                 />
                 <canvas ref={canvasRef} className="hidden" />
                 {countdown !== null && (
