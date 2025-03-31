@@ -286,7 +286,9 @@ export default function Photobooth() {
       <div className="max-w-screen-xl mx-auto p-4 space-y-3">
         <div className="fixed top-0 left-0 z-20 right-0 max-w-screen-xl p-4 mx-auto space-y-3">
           <div className="bg-white p-4 shadow-lg rounded-lg text-pink-500">
-            <p className="text-4xl text-center font-bold">Photobooth</p>
+            <p className="text-4xl text-center font-bold">
+              Photobooth <span className="text-xs">V1.1</span>
+            </p>
           </div>
         </div>
 
@@ -446,7 +448,7 @@ export default function Photobooth() {
       <br />
       <br />
       <footer className="bg-pink-500 fixed bottom-0 left-0 right-0 text-white text-center py-4 mt-14">
-        <p>&copy; 2024 Photobooth by @bima_ryan23 😎</p>
+        <p>&copy; {new Date().getFullYear()} Photobooth | <a href="https://instagram.com/bima_ryan23">Follow me on Instagram</a></p>
       </footer>
     </div>
   );
