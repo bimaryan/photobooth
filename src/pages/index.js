@@ -32,13 +32,37 @@ export default function Photobooth() {
     const startCamera = async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: true,
+          video: {
+            facingMode: "user", // Menggunakan kamera depan jika tersedia
+            focusMode: "continuous", // Fokus otomatis jika didukung
+            exposureMode: "continuous", // Auto-brightness jika didukung
+          },
         });
-        if (videoRef.current) videoRef.current.srcObject = stream;
+
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          const [track] = stream.getVideoTracks();
+          const capabilities = track.getCapabilities();
+
+          // Cek dan terapkan auto-focus jika didukung
+          if (capabilities.focusMode) {
+            await track.applyConstraints({
+              advanced: [{ focusMode: "continuous" }],
+            });
+          }
+
+          // Cek dan terapkan auto-brightness (exposure) jika didukung
+          if (capabilities.exposureMode) {
+            await track.applyConstraints({
+              advanced: [{ exposureMode: "continuous" }],
+            });
+          }
+        }
       } catch (error) {
         console.error("Error accessing webcam:", error);
       }
     };
+
     startCamera();
 
     return () => {
@@ -68,6 +92,41 @@ export default function Photobooth() {
     setIsCapturing(false);
   };
 
+  const applyHDREffect = (ctx, canvas) => {
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+
+    for (let i = 0; i < data.length; i += 4) {
+      // Ambil warna RGB
+      let r = data[i];
+      let g = data[i + 1];
+      let b = data[i + 2];
+
+      // **1. Tingkatkan Kontras**
+      r = r * 1.2;
+      g = g * 1.2;
+      b = b * 1.2;
+
+      // **2. Perbaiki Kecerahan**
+      r = Math.min(255, r + 10);
+      g = Math.min(255, g + 10);
+      b = Math.min(255, b + 10);
+
+      // **3. Tambah Ketajaman (Simulasi HDR)**
+      const sharpness = 1.1;
+      r = Math.min(255, r * sharpness);
+      g = Math.min(255, g * sharpness);
+      b = Math.min(255, b * sharpness);
+
+      // Simpan kembali ke data pixel
+      data[i] = r;
+      data[i + 1] = g;
+      data[i + 2] = b;
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+  };
+
   const capturePhoto = () => {
     const canvas = canvasRef.current;
     const video = videoRef.current;
@@ -75,11 +134,12 @@ export default function Photobooth() {
 
     const ctx = canvas.getContext("2d");
 
-    // Tentukan ukuran yang sesuai untuk 16:9
+    // Ambil resolusi asli dari video
     const videoWidth = video.videoWidth;
     const videoHeight = video.videoHeight;
     const aspectRatio = 16 / 9;
 
+    // Pastikan canvas selalu landscape dengan aspek 16:9
     let newWidth = videoWidth;
     let newHeight = videoWidth / aspectRatio;
 
@@ -94,30 +154,33 @@ export default function Photobooth() {
     canvas.width = newWidth;
     canvas.height = newHeight;
 
-    // Terapkan filter sebelum menggambar gambar
-    if (backgroundBlur) {
-      ctx.filter = "blur(10px)";
-    } else {
-      ctx.filter = filter;
-    }
+    // Terapkan filter jika ada
+    ctx.filter = backgroundBlur ? "blur(5px)" : filter;
 
+    // Gunakan image smoothing agar tidak pecah
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+
+    // Balik horizontal untuk efek mirror
     ctx.translate(canvas.width, 0);
     ctx.scale(-1, 1);
 
-    // Ambil area tengah dari video dengan rasio 16:9
+    // Ambil area tengah video untuk mempertahankan aspek rasio
     ctx.drawImage(
       video,
       offsetX,
       offsetY,
       newWidth,
-      newHeight, // Area dari video yang diambil
+      newHeight, // Area video yang diambil
       0,
       0,
       newWidth,
       newHeight // Area canvas yang digunakan
     );
 
-    return canvas.toDataURL("image/png");
+    applyHDREffect(ctx, canvas);
+
+    return canvas.toDataURL("image/png", 1.0); // Kualitas 100%
   };
 
   const generateFinalPhoto = (photoList, frameType = null) => {
@@ -221,20 +284,38 @@ export default function Photobooth() {
         />
       </Head>
       <div className="max-w-screen-xl mx-auto p-4 space-y-3">
-        <div className="bg-white p-4 shadow-lg rounded-lg text-pink-500">
-          <p className="text-4xl text-center font-bold">Photobooth</p>
+        <div className="fixed top-0 left-0 z-20 right-0 max-w-screen-xl p-4 mx-auto space-y-3">
+          <div className="bg-white p-4 shadow-lg rounded-lg text-pink-500">
+            <p className="text-4xl text-center font-bold">Photobooth</p>
+          </div>
         </div>
+
+        <br />
+        <br />
+        <br />
+
+        <div className="bg-white p-4 shadow-lg rounded-lg text-pink-500 mt-5">
+          <h2 className="text-lg font-bold">Cara Menggunakan:</h2>
+          <ol className="list-decimal ml-5 mt-2 text-sm text-gray-700">
+            <li>Pertama kalian pencet tombol kamera</li>
+            <li>Kedua bisa memilih filter dan frame yang kalian inginkan</li>
+            <li>
+              Ketiga jika kalian sudah puas, kalian bisa download hasilnya
+            </li>
+          </ol>
+        </div>
+
         <div className="flex md:flex-row flex-col  gap-3 item-center">
           <div>
             <div className="bg-white p-4 shadow-lg rounded-lg w-full">
-              <div className="relative">
+              <div className="relative w-full aspect-[16/9]">
                 <video
                   ref={videoRef}
                   autoPlay
-                  className="w-full h-auto rounded-md"
+                  className="w-full h-full object-cover rounded-md"
                   style={{
                     filter: backgroundBlur ? "blur(10px)" : filter,
-                    transform: "scaleX(-1)", // Menghilangkan efek mirror
+                    transform: "scaleX(-1)", // Mirror efek untuk selfie
                   }}
                 />
                 <canvas ref={canvasRef} className="hidden" />
@@ -364,7 +445,7 @@ export default function Photobooth() {
       <br />
       <br />
       <br />
-      <footer class="bg-pink-500 fixed bottom-0 left-0 right-0 text-white text-center py-4 mt-14">
+      <footer className="bg-pink-500 fixed bottom-0 left-0 right-0 text-white text-center py-4 mt-14">
         <p>&copy; 2024 Photobooth by @bima_ryan23 😎</p>
       </footer>
     </div>
